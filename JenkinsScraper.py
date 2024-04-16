@@ -2,10 +2,10 @@ import csv
 import re
 import os
 import datetime
+import sys
 import requests
 
 from bs4 import BeautifulSoup
-
 
 def remove_all_commas(console_log):
     pattern = r","
@@ -202,8 +202,13 @@ test_case_csv = []
 test_case_names = []
 pr_row = ["Pull Request:"]
 
-scrape_jenkins_html(
-    "https://test-1-36.liferay.com/userContent/jobs/test-portal-acceptance-pullrequest(master)/builds/5722/jenkins-report.html")
+if len(sys.argv) > 1:
+    jenkinsUrl = sys.argv[1]
+    print(f"Jenkins URL: {jenkinsUrl}")
+else:
+    print("No argument provided.")
+
+scrape_jenkins_html(jenkinsUrl)
 
 scrape_logs()
 
