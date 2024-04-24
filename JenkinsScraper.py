@@ -27,7 +27,8 @@ def get_html_content(url, filename):
 
     except requests.exceptions.RequestException as e:
         print(f"Error downloading HTML: {e}")
-        exit(1)
+        if filename == "test_report.html":
+            return 0
 
 
 def get_error_and_context(lines):
@@ -97,6 +98,9 @@ def scrape_jenkins_html(url):
 
 def scrape_test_report(test_report_url):
     test_report_content = get_html_content(test_report_url, "test_report.html")
+    if test_report_content == 0:
+        print("Failed to process Test Report,  Check manually for a possible CI error")
+        return "Failed to process Test Report"
     soup = BeautifulSoup(test_report_content, 'html.parser')
     all_links = soup.find_all('a')
 
@@ -205,8 +209,6 @@ pr_row = ["Pull Request:"]
 if len(sys.argv) > 1:
     jenkinsUrl = sys.argv[1]
     print(f"Jenkins URL: {jenkinsUrl}")
-else:
-    print("No argument provided.")
 
 scrape_jenkins_html(jenkinsUrl)
 
