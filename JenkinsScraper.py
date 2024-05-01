@@ -7,6 +7,7 @@ import requests
 
 from bs4 import BeautifulSoup
 
+
 def remove_all_commas(console_log):
     pattern = r","
     if console_log:
@@ -36,14 +37,15 @@ def get_error_and_context(lines):
     error_found = False
     context_lines = []
     error_regex = r"\s+ERROR\s+\[.+\]"
+    failed_regex = r"\s+FAILED\s"
 
     for line in lines:
-        if re.search(error_regex, line) and not error_found:
+        if re.search(error_regex, line) or re.search(failed_regex, line) and not error_found:
             error_found = True
 
         if error_found:
             context_lines.append(line)
-            if len(context_lines) == 50:
+            if len(context_lines) == 10:
                 string_data = ''.join(context_lines)
                 error_stacktraces.append(string_data)
                 context_lines = []
@@ -70,18 +72,28 @@ def scrape_jenkins_html(url):
         print("No link found containing 'PR#'")
 
     tables = soup.find_all('table')
-
+    column_row_switch = 0
     for table in tables:
         if table.caption and (table.caption.text.startswith("---- Unstable: ") or table.caption.text.startswith(
                 "---- Failure: ") or table.caption.text.startswith("---- Aborted: ")):
             for row in table.find_all('tr'):
+                if row.find("th", text="Name") and column_row_switch != 1:
+                    row_data = []
+                    column_row_switch = 1
+                    for cell in row.find_all('th'):
+                        cell_text = cell.text.strip()
+                        row_data.append(cell_text)
+                    string_data = ','.join(row_data)
+                    string_data += ",Stacktrace"
+                    scraped_jenkins_html.append(string_data)
+
                 if any(cell.text.strip() == 'Console' for cell in row.find_all('td')):
                     row_data = []
                     for cell in row.find_all('td'):
                         cell_text = cell.text.strip()
-                        if '+' in cell_text:
-                            continue
                         cell_text = cell_text.replace(",", "")
+                        cell_text = cell_text.replace("+", "")
+                        cell_text = cell_text.replace("\n", "")
                         if cell.find('a') and cell.find('a').text == 'Console':
                             console_url = cell.find('a')['href']
                             console_url = f"{console_url}Text"
@@ -99,8 +111,7 @@ def scrape_jenkins_html(url):
 def scrape_test_report(test_report_url):
     test_report_content = get_html_content(test_report_url, "test_report.html")
     if test_report_content == 0:
-        print("Failed to process Test Report,  Check manually for a possible CI error")
-        return "Failed to process Test Report"
+        return "Failed to process Test Report, please check manually"
     soup = BeautifulSoup(test_report_content, 'html.parser')
     all_links = soup.find_all('a')
 
@@ -121,6 +132,8 @@ def scrape_test_report(test_report_url):
 
 def scrape_test_case_names(test_report_url):
     test_report_content = get_html_content(test_report_url, "test_report.html")
+    if test_report_content == 0:
+        return "Failed to process Test Report"
     soup = BeautifulSoup(test_report_content, 'html.parser')
     all_links = soup.find_all('a')
 
@@ -159,6 +172,7 @@ def scrape_logs():
             if error_stacktraces:
                 error_stack = ''.join(error_stacktraces)
                 error_stack = remove_all_commas(error_stack)
+                error_stack = error_stack[:45000]
                 global_error_stacktraces.append(error_stack)
             else:
                 report_stack = scrape_test_report(test_report_urls[console_log_urls_counter])
@@ -170,9 +184,11 @@ def scrape_logs():
 
         console_log_urls_counter += 1
 
+    test_case_csv.append(scraped_jenkins_html[scraped_jenkins_html_counter])
+
     for stacktrace in global_error_stacktraces:
-        test_case_row = scraped_jenkins_html[scraped_jenkins_html_counter] + ","
         scraped_jenkins_html_counter += 1
+        test_case_row = scraped_jenkins_html[scraped_jenkins_html_counter] + ","
         test_case_row = test_case_row + stacktrace
         test_case_csv.append(test_case_row)
 
@@ -184,7 +200,6 @@ def scrape_logs():
     with open(today, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(pr_row)
-        writer.writerow(header_row)
         for entry in test_case_csv:
             data_list = entry.split(",")
             writer.writerow(data_list)
@@ -194,7 +209,7 @@ def scrape_logs():
             writer.writerow(["", "", "", "", "", "", test_name])
 
 
-header_row = ["Console", "Test Report", "Date", "Build Time", "Status", "Result", "Stacktraces"]
+header_row = ""
 
 footer_row = ["Jira Tickets", "Stacktrace", "Component", "Product Team", "Priority", "", "Test Cases"]
 
@@ -209,6 +224,8 @@ pr_row = ["Pull Request:"]
 if len(sys.argv) > 1:
     jenkinsUrl = sys.argv[1]
     print(f"Jenkins URL: {jenkinsUrl}")
+else:
+    jenkinsUrl = "https://test-1-31.liferay.com/userContent/jobs/test-portal-acceptance-pullrequest(master)/builds/10794/jenkins-report.html"
 
 scrape_jenkins_html(jenkinsUrl)
 
